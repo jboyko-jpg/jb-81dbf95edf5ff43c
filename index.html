@@ -1,0 +1,43 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="To-Do"><meta name="theme-color" content="#111">
+<link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="apple-touch-icon.png"><title>To-Do</title>
+<style>
+[hidden]{display:none!important}
+body{margin:0;background:#111;color:#eee;font:16px -apple-system,system-ui,sans-serif;padding:env(safe-area-inset-top) 12px 40px}
+h1{font-size:22px;margin:14px 0 2px}.upd{color:#888;font-size:13px;margin-bottom:12px}
+ol{list-style:none;padding:0;margin:0}li{background:#1d1d1d;border-radius:10px;padding:10px 12px;margin:8px 0;display:flex;gap:10px}
+li .n{color:#888;min-width:22px;font-weight:600}li.over{border-left:4px solid #e44;background:#2a1515}
+.chips{margin-top:5px}.chip{display:inline-block;font-size:12px;padding:2px 8px;border-radius:10px;background:#333;margin-right:5px}
+.over .due{background:#a22;color:#fff}.tag{background:#234;color:#9cf}
+#lock{position:absolute;right:12px;top:calc(env(safe-area-inset-top) + 16px);background:#333;color:#eee;border:0;border-radius:8px;padding:6px 10px}
+details{background:#FFE94D;color:#000;border-radius:10px;padding:10px 12px;margin-top:18px}summary{font-weight:700}
+.sc{margin:6px 0}.sc code{color:#0040C0;font-weight:700}
+#pin{display:flex;flex-direction:column;align-items:center;margin-top:30vh;gap:12px}
+#pin input{font-size:28px;width:230px;text-align:center;letter-spacing:4px;background:#222;color:#fff;border:1px solid #444;border-radius:10px;padding:8px}
+#pin button{font-size:18px;padding:8px 24px;border-radius:10px;border:0;background:#2a6;color:#fff}#err{color:#e66;min-height:20px}
+</style></head><body>
+<div id="pin"><div>Enter passcode</div><input id="p" type="password" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" maxlength="32"><button id="go">Unlock</button><div id="err"></div></div>
+<div id="app" hidden><button id="lock">Lock</button><h1>To-Do</h1><div class="upd" id="upd"></div><ol id="list"></ol>
+<details><summary>Shortcuts</summary><div id="sc"></div></details></div>
+<script>
+const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function decrypt(pin){const r=await fetch('data.enc.json?t='+Date.now(),{cache:'no-store'});const d=await r.json();
+const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),'PBKDF2',false,['deriveKey']);
+const k=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(d.salt),iterations:d.iter,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['decrypt']);
+return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(d.iv)},k,b64(d.ct))));}
+function render(D){document.getElementById('upd').textContent='Updated '+(D.updated||'');
+const t=new Date();t.setHours(0,0,0,0);const pd=s=>{const x=s&&new Date(s+(/^\d{4}-\d\d-\d\d$/.test(s)?'T00:00':''));return x&&!isNaN(x)?x:null};
+const it=D.items.map(i=>({...i,d:pd(i.due)})).sort((a,b)=>(a.d?a.d:Infinity)-(b.d?b.d:Infinity));
+document.getElementById('list').innerHTML=it.map((i,n)=>`<li class="${i.d&&i.d<t?'over':''}"><span class="n">${n+1}.</span><div><div>${esc(i.text)}</div><div class="chips">${i.due?`<span class="chip due">${esc(i.due)}</span>`:''}${i.tag?`<span class="chip tag">${esc(i.tag)}</span>`:''}</div></div></li>`).join('');
+document.getElementById('sc').innerHTML=(D.shortcuts||[]).map(s=>`<div class="sc"><code>${esc(s.cmd)}</code> — ${esc(s.desc)}</div>`).join('');
+document.getElementById('pin').hidden=true;document.getElementById('app').hidden=false;}
+async function tryPin(p,save){try{const D=await decrypt(p);if(save)localStorage.setItem('pin',p);render(D)}catch(e){localStorage.removeItem('pin');document.getElementById('err').textContent='Wrong passcode';}}
+document.getElementById('go').onclick=()=>tryPin(document.getElementById('p').value.trim(),1);
+document.getElementById('p').onkeydown=e=>{if(e.key==='Enter')document.getElementById('go').click()};
+document.getElementById('lock').onclick=()=>{localStorage.removeItem('pin');location.reload()};
+const s=localStorage.getItem('pin');if(s)tryPin(s,0);
+</script></body></html>

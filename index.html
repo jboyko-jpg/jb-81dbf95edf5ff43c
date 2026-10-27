@@ -8,10 +8,16 @@
 [hidden]{display:none!important}
 body{margin:0;background:#111;color:#eee;font:16px -apple-system,system-ui,sans-serif;padding:env(safe-area-inset-top) 12px 40px}
 h1{font-size:22px;margin:14px 0 2px}.upd{color:#888;font-size:13px;margin-bottom:12px}
-ol{list-style:none;padding:0;margin:0}li{background:#1d1d1d;border-radius:10px;padding:10px 12px;margin:8px 0;display:flex;gap:10px}
-li .n{color:#888;min-width:22px;font-weight:600}li.over{border-left:4px solid #e44;background:#2a1515}
+h2{font-size:15px;letter-spacing:.08em;text-transform:uppercase;color:#aaa;margin:18px 0 4px}
+ol{list-style:none;padding:0;margin:0}li{background:#1d1d1d;border-radius:10px;padding:9px 12px;margin:7px 0;display:flex;gap:10px;cursor:pointer}
+li .n{color:#888;min-width:24px;font-weight:600}li.over{border-left:4px solid #e44;background:#2a1515}li.tod{border-left:4px solid #f2b705}
+li .hl{font-weight:500;line-height:1.3}li .det{display:none;font-size:14px;color:#bbb;margin-top:6px;white-space:pre-wrap}li.open .det{display:block}
 .chips{margin-top:5px}.chip{display:inline-block;font-size:12px;padding:2px 8px;border-radius:10px;background:#333;margin-right:5px}
-.over .due{background:#a22;color:#fff}.tag{background:#234;color:#9cf}
+.over .due{background:#a22;color:#fff}.tod .due{background:#a77a00;color:#fff}.tag{background:#234;color:#9cf}.tag.cq{background:#7a3d00;color:#ffd8a8}
+#more{display:block;width:100%;background:#222;color:#9cf;border:0;border-radius:10px;padding:9px;font-size:14px;margin-top:4px}
+.cday{font-size:13px;font-weight:700;color:#9cf;margin:10px 0 2px}.cday.today{color:#f2b705}
+.cr{display:flex;gap:10px;background:#1a1d22;border-radius:8px;padding:7px 10px;margin:3px 0;font-size:15px}.cr .ct{color:#999;min-width:70px;font-size:13px;padding-top:1px}
+.cr .cl{color:#888;font-size:12px}
 #lock{position:absolute;right:12px;top:calc(env(safe-area-inset-top) + 16px);background:#333;color:#eee;border:0;border-radius:8px;padding:6px 10px}
 details{background:#FFE94D;color:#000;border-radius:10px;padding:10px 12px;margin-top:18px}summary{font-weight:700}
 .sc{margin:6px 0}.sc code{color:#0040C0;font-weight:700}
@@ -20,7 +26,7 @@ details{background:#FFE94D;color:#000;border-radius:10px;padding:10px 12px;margi
 #pin button{font-size:18px;padding:8px 24px;border-radius:10px;border:0;background:#2a6;color:#fff}#err{color:#e66;min-height:20px}
 </style></head><body>
 <div id="pin"><div>Enter passcode</div><input id="p" type="password" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" maxlength="32"><button id="go">Unlock</button><div id="err"></div></div>
-<div id="app" hidden><button id="lock">Lock</button><h1>To-Do</h1><div class="upd" id="upd"></div><ol id="list"></ol>
+<div id="app" hidden><button id="lock">Lock</button><h1>To-Do</h1><div class="upd" id="upd"></div><h2>Tasks</h2><ol id="list"></ol><button id="more" hidden></button><ol id="later" hidden></ol><h2>Calendar <span style="font-size:11px;letter-spacing:0;text-transform:none;color:#777">next 30 days</span></h2><div id="cal"></div>
 <details><summary>Shortcuts</summary><div id="sc"></div></details></div>
 <script>
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
@@ -30,9 +36,23 @@ const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),'PBKD
 const k=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(d.salt),iterations:d.iter,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['decrypt']);
 return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(d.iv)},k,b64(d.ct))));}
 function render(D){document.getElementById('upd').textContent='Updated '+(D.updated||'');
-const t=new Date();t.setHours(0,0,0,0);const pd=s=>{const x=s&&new Date(s+(/^\d{4}-\d\d-\d\d$/.test(s)?'T00:00':''));return x&&!isNaN(x)?x:null};
-const it=D.items.map(i=>({...i,d:pd(i.due)})).sort((a,b)=>(a.d?a.d:Infinity)-(b.d?b.d:Infinity));
-document.getElementById('list').innerHTML=it.map((i,n)=>`<li class="${i.d&&i.d<t?'over':''}"><span class="n">${n+1}.</span><div><div>${esc(i.text)}</div><div class="chips">${i.due?`<span class="chip due">${esc(i.due)}</span>`:''}${i.tag?`<span class="chip tag">${esc(i.tag)}</span>`:''}</div></div></li>`).join('');
+const t=new Date();t.setHours(0,0,0,0);const pd=s=>s?new Date(s+'T00:00'):null;
+const days=s=>{const x=pd(s);return x&&!isNaN(x)?Math.round((x-t)/864e5):Infinity};
+const fmt=s=>{const x=pd(s);return x&&!isNaN(x)?x.toLocaleDateString('en-US',{weekday:'short',month:'numeric',day:'numeric'}):(s||'')};
+// Same order/numbers as the wallpaper: stable sort by due (ties keep file order)
+const it=(D.items||[]).map((x,i)=>[x,i]).sort((p,q)=>((p[0].due||'9')<(q[0].due||'9')?-1:(p[0].due||'9')>(q[0].due||'9')?1:p[1]-q[1])).map(p=>p[0]);
+const li=(i,n)=>{const d=days(i.due);const cls=d<0?'over':d===0?'tod':'';const due=d<0?'OVERDUE '+fmt(i.due):d===0?'TODAY':fmt(i.due);
+const hl=i.headline||i.text;const det=i.headline&&i.text&&i.text!==i.headline?i.text:'';
+return `<li class="${cls}"><span class="n">${n}.</span><div><div class="hl">${esc(hl)}</div><div class="chips">${i.due?`<span class="chip due">${esc(due)}</span>`:''}${i.tag?`<span class="chip tag${i.tag==='Calendar?'?' cq':''}">${esc(i.tag)}</span>`:''}</div>${det?`<div class="det">${esc(det)}</div>`:''}</div></li>`};
+const soon=[],later=[];it.forEach((i,k)=>(days(i.due)<=14?soon:later).push(li(i,k+1)));
+document.getElementById('list').innerHTML=soon.join('');const L=document.getElementById('later'),M=document.getElementById('more');
+L.innerHTML=later.join('');L.hidden=true;M.hidden=!later.length;M.textContent='+'+later.length+' later \u25BE';
+M.onclick=()=>{L.hidden=!L.hidden;M.textContent='+'+later.length+' later '+(L.hidden?'\u25BE':'\u25B4')};
+document.querySelectorAll('li').forEach(e=>e.onclick=()=>e.classList.toggle('open'));
+const cal=(D.calendar||[]).filter(c=>{const d=days(c.date);return d>=0&&d<=30});let last='',h='';
+cal.forEach(c=>{if(c.date!==last){h+=`<div class="cday${days(c.date)===0?' today':''}">${days(c.date)===0?'Today \u00b7 ':''}${esc(fmt(c.date))}</div>`;last=c.date}
+h+=`<div class="cr"><span class="ct">${esc(c.time||'All day')}</span><div><div>${esc(c.title)}</div>${c.location?`<div class="cl">${esc(c.location)}</div>`:''}</div></div>`});
+document.getElementById('cal').innerHTML=h||'<div class="cl">Nothing in the next 30 days.</div>';
 document.getElementById('sc').innerHTML=(D.shortcuts||[]).map(s=>`<div class="sc"><code>${esc(s.cmd)}</code> — ${esc(s.desc)}</div>`).join('');
 document.getElementById('pin').hidden=true;document.getElementById('app').hidden=false;}
 async function tryPin(p,save){try{const D=await decrypt(p);if(save)localStorage.setItem('pin',p);render(D)}catch(e){localStorage.removeItem('pin');document.getElementById('err').textContent='Wrong passcode';}}
